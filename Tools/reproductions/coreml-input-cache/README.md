@@ -29,7 +29,7 @@ uv run --python 3.12 --with coremltools==9.0 generate_fixture.py
 
 The fixture uses Apple's [NeuralNetworkBuilder](https://apple.github.io/coremltools/source/coremltools.models.neural_network.html). The reproduction compiles it on the host with [MLModel.compileModel](https://developer.apple.com/documentation/coreml/mlmodel/compilemodel(at:)-45ao6).
 
-Verified on macOS 26.5 (25F71), arm64, with Apple Swift 6.3.3:
+Before the fix, verified at `ca4a167` on macOS 26.5 (25F71), arm64, with Apple Swift 6.3.3:
 
 | Check | Exit code | Observed result |
 | --- | --- | --- |
@@ -39,4 +39,14 @@ Verified on macOS 26.5 (25F71), arm64, with Apple Swift 6.3.3:
 
 The first failure comes from clearing the cached arrays before a throwing rebuild while retaining the old provider. Empty inputs then match the empty array cache. The second failure comes from matching only input names and shapes, which skips element validation on cache hits. No crash or physical memory overwrite was observed.
 
-These are checks for advanced callers that change inputs on a reused public session. Normal model SDK inputs keep fixed element types. The backend has not been fixed in this reproduction commit.
+These are checks for advanced callers that change inputs on a reused public session. Normal model SDK inputs keep fixed element types. The initial reproduction commit (`ca4a167`) left the backend unchanged.
+
+After the fix, all three modes return exit code 0. The cache owns its arrays and provider as one complete value. A failed construction keeps the previous value complete. Cache matching validates the native element type before any input copy. Supported type changes rebuild the arrays.
+
+The retained public-interface tests are in `Tests/InferenceTests/CoreMLSessionTests.swift`. They cover both reproduced failures, a native float32 array construction failure, valid cache hits, supported type changes, and recovery. Run them from the repository root:
+
+```sh
+DAL_USAGE_DISABLED=1 DAL_COREML_COMPUTE_UNITS=cpu xcrun swift test --scratch-path .build-host -c release --disable-xctest --filter CoreMLSessionTests
+```
+
+The test resource is an identical copy of this reproduction's 67-byte identity model. These CPU fixture tests do not establish shipping-model, float16-graph, GPU, or ANE behavior.

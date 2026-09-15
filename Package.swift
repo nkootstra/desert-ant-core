@@ -483,7 +483,7 @@ let testTargets: [Target] = [
         .testTarget(
             name: "InferenceTests",
             dependencies: ["Inference"],
-            resources: [.copy("Resources/testmodel.tflite")]
+            resources: [.copy("Resources/testmodel.tflite"), .copy("Resources/identity.mlmodel")]
         ),
         .testTarget(name: "AudioDSPTests", dependencies: ["AudioDSP"]),
         .testTarget(name: "AudioIOTests", dependencies: ["AudioIO", "TestSupport"]),

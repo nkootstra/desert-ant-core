@@ -13,13 +13,17 @@ import PlatformSupport
 /// which is orders of magnitude faster on large tensors (and lets Core ML run
 /// the pure-fp16 graph instead of inserting casts). The MLMultiArrays and the
 /// feature provider are built once and reused across `run` calls of the same
-/// shape (e.g. a fixed-window model over many chunks). `int32`/`float32` I/O is
-/// copied directly; `int64` inputs are rejected (Core ML has no int64 tensors).
+/// shape and type (e.g. a fixed-window model over many chunks).
+/// `int32`/`float32` I/O is copied directly; `int64` inputs are rejected (Core ML has no int64 tensors).
 final class CoreMLSession: InferenceSession, @unchecked Sendable {
     private let model: MLModel
     private let lock = NSLock()
-    private var inArrays: [String: MLMultiArray] = [:]
-    private var provider: MLDictionaryFeatureProvider?
+    private struct InputCache {
+        let arrays: [String: MLMultiArray]
+        let provider: MLDictionaryFeatureProvider
+    }
+
+    private var inputCache: InputCache?
 
     /// Load a compiled model. `computeUnits` is what the model SDK asks for
     /// (Core ML's `MLComputeUnits`); the environment and the simulator can
@@ -91,22 +95,21 @@ final class CoreMLSession: InferenceSession, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         let desc = model.modelDescription.inputDescriptionsByName
 
-        // Build (once) and reuse the input arrays + provider; rebuild only when
-        // the set of inputs or a shape changes.
-        if provider == nil || !cacheMatches(inputs) {
-            inArrays.removeAll(keepingCapacity: true)
-            var features: [String: Any] = [:]
+        // Publish arrays and provider together so a failed rebuild keeps the old cache complete.
+        if try !cacheMatches(inputs, descriptions: desc) {
+            var arrays: [String: MLMultiArray] = [:]
             for (name, tensor) in inputs {
                 let dt = try dataType(for: tensor, declared: desc[name]?.multiArrayConstraint?.dataType)
                 let array = try MLMultiArray(shape: tensor.shape.map { NSNumber(value: $0) }, dataType: dt)
-                inArrays[name] = array
-                features[name] = array
+                arrays[name] = array
             }
-            provider = try MLDictionaryFeatureProvider(dictionary: features)
+            let provider = try MLDictionaryFeatureProvider(dictionary: arrays)
+            inputCache = InputCache(arrays: arrays, provider: provider)
         }
-        for (name, tensor) in inputs { write(tensor, into: inArrays[name]!) }
+        let cache = inputCache!
+        for (name, tensor) in inputs { write(tensor, into: cache.arrays[name]!) }
 
-        let prediction = try model.prediction(from: provider!)
+        let prediction = try model.prediction(from: cache.provider)
         return try outputs.map { name in
             guard let array = prediction.featureValue(for: name)?.multiArrayValue else {
                 throw InferenceError.runFailed("the model returned no '\(name)'")
@@ -115,10 +118,14 @@ final class CoreMLSession: InferenceSession, @unchecked Sendable {
         }
     }
 
-    private func cacheMatches(_ inputs: [String: Tensor]) -> Bool {
-        guard inArrays.count == inputs.count else { return false }
+    private func cacheMatches(
+        _ inputs: [String: Tensor], descriptions: [String: MLFeatureDescription]
+    ) throws -> Bool {
+        guard let cache = inputCache, cache.arrays.count == inputs.count else { return false }
         for (name, tensor) in inputs {
-            guard let a = inArrays[name], a.shape.map(\.intValue) == tensor.shape else { return false }
+            guard let a = cache.arrays[name], a.shape.map(\.intValue) == tensor.shape,
+                  a.dataType == (try dataType(for: tensor, declared: descriptions[name]?.multiArrayConstraint?.dataType))
+            else { return false }
         }
         return true
     }
