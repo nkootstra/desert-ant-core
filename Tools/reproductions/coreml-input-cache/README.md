@@ -49,4 +49,8 @@ The retained public-interface tests are in `Tests/InferenceTests/CoreMLSessionTe
 DAL_USAGE_DISABLED=1 DAL_COREML_COMPUTE_UNITS=cpu xcrun swift test --scratch-path .build-host -c release --disable-xctest --filter CoreMLSessionTests
 ```
 
-The test resource is an identical copy of this reproduction's 67-byte identity model. These CPU fixture tests do not establish shipping-model, float16-graph, GPU, or ANE behavior.
+The test resource is an identical copy of this reproduction's 67-byte identity model. These CPU fixture tests do not establish shipping-model, GPU, or ANE behavior.
+
+The validation fixtures also cover valid input shape changes and native float16 input/output. The generator writes these fixtures into `Tests/InferenceTests/Resources`. The flexible neural-network fixture can return a five-dimensional native array; its test checks element count and values. The float16 test checks the compiled model's declared types before inference. A concurrent test checks that one shared session returns each caller's own values while supported input types change.
+
+Fixture APIs: Apple's [flexible input shapes](https://apple.github.io/coremltools/docs-guides/source/flexible-inputs.html) and [MIL Builder](https://apple.github.io/coremltools/docs/source/coremltools.converters.mil.html).
