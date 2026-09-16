@@ -95,7 +95,7 @@ export function route(text: string): Route {
   }
   const narrowing = presence(counts, NARROWING_KEYS);
   if (narrowing !== null) {
-    return { verdict: "narrowing", candidates: NARROWING[narrowing]!, script: narrowing };
+    return { verdict: "narrowing", candidates: [...NARROWING[narrowing]!], script: narrowing };
   }
   return { verdict: "ambiguous", candidates: [], script: dominantScript(text) };
 }

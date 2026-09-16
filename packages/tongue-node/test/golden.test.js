@@ -58,6 +58,20 @@ test("router matches the reference", async () => {
   }
 });
 
+test("changing one narrowing route does not change later routes", () => {
+  const text = "привет как твои дела";
+  const expected = ["ru", "uk", "bg", "sr", "mk", "be", "kk", "ky"];
+  const first = route(text);
+  assert.deepEqual([...first.candidates], expected);
+
+  first.candidates.length = 0;
+  try {
+    assert.deepEqual([...route(text).candidates], expected);
+  } finally {
+    first.candidates.push(...expected);
+  }
+});
+
 test("detects across scripts", async () => {
   const tongue = await Tongue.load({ from: join(here, "..", "dist") });
   for (const [text, expected] of [
